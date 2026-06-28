@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { 
   Send, 
   Heart, 
@@ -12,6 +13,8 @@ import {
   Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
+
+const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
 
 const INITIAL_POSTS = [
   {
@@ -64,6 +67,7 @@ const INITIAL_POSTS = [
 ];
 
 function Dashboard() {
+  const { profile } = useAuth();
   const [posts, setPosts] = useState(INITIAL_POSTS);
   const [newPostContent, setNewPostContent] = useState("");
   const [selectedTag, setSelectedTag] = useState("Idea");
@@ -86,9 +90,9 @@ function Dashboard() {
     const newPost = {
       id: posts.length + 1,
       author: {
-        name: "Alex Rivera",
-        title: "Computer Science Undergrad",
-        avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face"
+        name: profile?.full_name || "You",
+        title: profile?.department || profile?.title || "Student",
+        avatar: profile?.avatar_url || FALLBACK_AVATAR
       },
       content: newPostContent,
       tag: selectedTag,
@@ -128,7 +132,7 @@ function Dashboard() {
         if (post.id === postId) {
           return {
             ...post,
-            comments: [...post.comments, { author: "Alex Rivera", text: commentText }]
+            comments: [...post.comments, { author: profile?.full_name || "You", text: commentText }]
           };
         }
         return post;
@@ -147,8 +151,8 @@ function Dashboard() {
         <form onSubmit={handleCreatePost} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
             <img 
-              src="https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face" 
-              alt="Alex" 
+              src={profile?.avatar_url || FALLBACK_AVATAR}
+              alt={profile?.full_name || "You"}
               className="avatar" 
               style={{ width: "42px", height: "42px" }}
             />

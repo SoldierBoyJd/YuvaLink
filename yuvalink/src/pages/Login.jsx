@@ -38,8 +38,10 @@ function Login() {
           .maybeSingle();
 
         if (!existingProfile) {
-          // If no profile exists, create a default one
-          const defaultName = email.split("@")[0];
+          // Use name/college stored in user metadata during registration
+          const meta = data.user.user_metadata || {};
+          const defaultName = meta.full_name || email.split("@")[0];
+          const defaultDept = meta.department || "";
           await supabase
             .from("profiles")
             .insert([
@@ -47,6 +49,7 @@ function Login() {
                 id: data.user.id,
                 user_id: data.user.id,
                 full_name: defaultName,
+                department: defaultDept,
                 avatar_url: `https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop`
               }
             ]);

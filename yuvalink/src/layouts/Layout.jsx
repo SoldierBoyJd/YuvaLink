@@ -15,19 +15,13 @@ import {
   UserPlus
 } from "lucide-react";
 import { supabase } from "../config/supabase";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 
 
-// Mock user details
-const MOCK_USER = {
-  name: "Alex Rivera",
-  username: "alex_rivera",
-  email: "alex@yuvalink.dev",
-  title: "Computer Science Undergrad",
-  avatar: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face",
-  connectionsCount: 142,
-  profileCompletion: 85
-};
+// Fallback avatar when profile has no avatar_url
+const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
+
 
 const SUGGESTED_CONNECTIONS = [
   { id: 1, name: "Zara Chen", title: "UI/UX Student", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop" },
@@ -45,6 +39,7 @@ function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const theme = "dark";
+  const { profile } = useAuth();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [connectedIds, setConnectedIds] = useState([]);
 
@@ -172,8 +167,8 @@ function Layout({ children }) {
           {/* User Profile Dropdown Toggle */}
           <div style={{ position: "relative" }}>
             <img
-              src={MOCK_USER.avatar}
-              alt={MOCK_USER.name}
+              src={profile?.avatar_url || FALLBACK_AVATAR}
+              alt={profile?.full_name || "User"}
               className="avatar"
               style={{ width: "38px", height: "38px", cursor: "pointer" }}
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
@@ -223,21 +218,23 @@ function Layout({ children }) {
           {/* Quick Profile Summary Widget */}
           <div className="glass-card" style={{ padding: "16px", textAlign: "center", marginBottom: "10px" }}>
             <img
-              src={MOCK_USER.avatar}
-              alt={MOCK_USER.name}
+              src={profile?.avatar_url || FALLBACK_AVATAR}
+              alt={profile?.full_name || "User"}
               className="avatar avatar-ring"
               style={{ width: "68px", height: "68px", marginBottom: "12px" }}
             />
-            <h4 style={{ fontSize: "16px", fontWeight: "700" }}>{MOCK_USER.name}</h4>
-            <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px" }}>{MOCK_USER.title}</p>
+            <h4 style={{ fontSize: "16px", fontWeight: "700" }}>{profile?.full_name || "—"}</h4>
+            <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "12px" }}>
+              {profile?.department || profile?.title || "Student"}
+            </p>
             <div style={{ borderTop: "1px solid var(--card-border)", paddingTop: "12px", display: "flex", justifyContent: "space-around" }}>
               <div>
-                <div style={{ fontSize: "14px", fontWeight: "700" }}>{MOCK_USER.connectionsCount}</div>
+                <div style={{ fontSize: "14px", fontWeight: "700" }}>{profile?.connections_count ?? 0}</div>
                 <div style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Peers</div>
               </div>
               <div style={{ borderLeft: "1px solid var(--card-border)" }}></div>
               <div>
-                <div style={{ fontSize: "14px", fontWeight: "700" }}>{MOCK_USER.profileCompletion}%</div>
+                <div style={{ fontSize: "14px", fontWeight: "700" }}>{profile?.profile_completion ?? 0}%</div>
                 <div style={{ fontSize: "10px", color: "var(--text-muted)", textTransform: "uppercase" }}>Setup</div>
               </div>
             </div>

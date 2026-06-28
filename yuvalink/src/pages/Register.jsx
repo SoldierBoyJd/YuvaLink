@@ -25,9 +25,16 @@ function Register() {
 
     try {
       // 1. Sign up the user inside Supabase Auth
+      // Store name/college in user metadata so they are available after email confirmation
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email,
         password: password,
+        options: {
+          data: {
+            full_name: name,
+            department: college,
+          }
+        }
       });
 
       if (authError) throw authError;
@@ -61,7 +68,9 @@ function Register() {
 
     } catch (error) {
       // Display any registration or database insertion errors
-      toast.error(error.message || "An error occurred during registration");
+      console.error("Detailed registration error:", error);
+      const errorMessage = error?.message || (typeof error === "string" ? error : JSON.stringify(error)) || "An error occurred during registration";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

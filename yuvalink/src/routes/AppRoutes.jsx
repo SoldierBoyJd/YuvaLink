@@ -1,6 +1,5 @@
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { supabase } from "../config/supabase";
+import { useAuth } from "../context/AuthContext";
 
 import Landing from "../pages/Landing";
 import Login from "../pages/Login";
@@ -13,22 +12,7 @@ import Connections from "../pages/Connections";
 
 // Route guard component defined inline
 function ProtectedRoute() {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -45,7 +29,7 @@ function ProtectedRoute() {
     );
   }
 
-  return session ? <Outlet /> : <Navigate to="/login" replace />;
+  return user ? <Outlet /> : <Navigate to="/login" replace />;
 }
 
 function AppRoutes() {
