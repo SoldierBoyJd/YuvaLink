@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Sparkles, Mail, Lock, ArrowRight, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
+import { supabase } from "../config/supabase";
 
 function Login() {
   const navigate = useNavigate();
@@ -10,7 +11,7 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error("Please fill in all fields");
@@ -18,14 +19,51 @@ function Login() {
     }
 
     setIsLoading(true);
-    // Simulate login
-    setTimeout(() => {
-      setIsLoading(false);
-      localStorage.setItem("isLoggedIn", "true");
+
+    try {
+      // Sign in the user using Supabase Auth
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) throw error;
+
+      // Check if user has a profile record (e.g. if email confirmation was ON during registration)
+      if (data?.user) {
+        const { data: existingProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        if (!existingProfile) {
+          // If no profile exists, create a default one
+          const defaultName = email.split("@")[0];
+          await supabase
+            .from("profiles")
+            .insert([
+              {
+                id: data.user.id,
+                user_id: data.user.id,
+                full_name: defaultName,
+                avatar_url: `https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop`
+              }
+            ]);
+        }
+      }
+
       toast.success("Welcome back to YuvaLink!");
       navigate("/dashboard");
-    }, 1000);
+
+    } catch (error) {
+      // Display error toast on incorrect password/email or connection failures
+      toast.error(error.message || "Invalid login credentials");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
 
   return (
     <div style={{
@@ -78,7 +116,7 @@ function Login() {
           <Sparkles size={28} style={{ color: "var(--primary)" }} />
           <span style={{ fontSize: "24px", fontWeight: "800", background: "var(--primary-gradient)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>YuvaLink</span>
         </div>
-        
+
         <h2 style={{ fontSize: "22px", fontWeight: "700", marginBottom: "8px" }}>Welcome Back</h2>
         <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: "32px" }}>
           Connect with your peers and explore opportunities
@@ -86,16 +124,16 @@ function Login() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          
+
           <div className="input-group">
             <label className="input-label" htmlFor="email">Email Address</label>
             <div style={{ position: "relative", width: "100%" }}>
               <Mail size={16} style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-              <input 
+              <input
                 id="email"
-                type="email" 
-                placeholder="you@university.edu" 
-                className="glass-input" 
+                type="email"
+                placeholder="you@university.edu"
+                className="glass-input"
                 style={{ width: "100%", paddingLeft: "42px" }}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -110,25 +148,25 @@ function Login() {
             </div>
             <div style={{ position: "relative", width: "100%" }}>
               <Lock size={16} style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-              <input 
+              <input
                 id="password"
-                type={showPassword ? "text" : "password"} 
-                placeholder="••••••••" 
-                className="glass-input" 
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                className="glass-input"
                 style={{ width: "100%", paddingLeft: "42px", paddingRight: "42px" }}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                style={{ 
-                  position: "absolute", 
-                  right: "14px", 
-                  top: "50%", 
-                  transform: "translateY(-50%)", 
-                  background: "none", 
-                  border: "none", 
+                style={{
+                  position: "absolute",
+                  right: "14px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
                   color: "var(--text-muted)",
                   cursor: "pointer",
                   display: "flex",
@@ -141,9 +179,9 @@ function Login() {
             </div>
           </div>
 
-          <button 
-            type="submit" 
-            className="btn btn-primary" 
+          <button
+            type="submit"
+            className="btn btn-primary"
             style={{ width: "100%", padding: "12px", marginTop: "8px", gap: "10px" }}
             disabled={isLoading}
           >

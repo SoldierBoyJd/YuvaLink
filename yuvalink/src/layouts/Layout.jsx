@@ -1,19 +1,22 @@
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { 
-  Home, 
-  Search, 
-  Users, 
-  Briefcase, 
-  User, 
-  LogOut, 
-  Bell, 
-  Compass, 
-  TrendingUp, 
+import {
+  Home,
+  Search,
+  Users,
+  Briefcase,
+  User,
+  LogOut,
+  Bell,
+  Compass,
+  TrendingUp,
   Sparkles,
   ChevronRight,
   UserPlus
 } from "lucide-react";
+import { supabase } from "../config/supabase";
+import toast from "react-hot-toast";
+
 
 // Mock user details
 const MOCK_USER = {
@@ -57,11 +60,22 @@ function Layout({ children }) {
     setConnectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
-  const handleLogout = () => {
-    // Basic local logout logic
-    localStorage.removeItem("isLoggedIn");
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      // 1. Sign out the user from Supabase Auth
+      await supabase.auth.signOut();
+
+      // 2. Clear old mock storage keys
+      localStorage.removeItem("isLoggedIn");
+
+      // 3. Redirect user back to the sign in page
+      navigate("/login");
+      toast.success("Successfully logged out!");
+    } catch (error) {
+      toast.error("Error signing out: " + error.message);
+    }
   };
+
 
   if (isAuthOrLanding) {
     return (
@@ -75,8 +89,8 @@ function Layout({ children }) {
         }}>
           <div className="topbar-brand" onClick={() => navigate("/")} style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
             <Sparkles size={22} style={{ color: "var(--primary)", filter: "drop-shadow(0 0 8px var(--primary-glow))" }} />
-            <span className="brand-text" style={{ 
-              fontWeight: "800", 
+            <span className="brand-text" style={{
+              fontWeight: "800",
               letterSpacing: "-0.03em",
               background: "linear-gradient(135deg, #ffffff 40%, #8b5cf6 100%)",
               WebkitBackgroundClip: "text",
@@ -85,11 +99,11 @@ function Layout({ children }) {
           </div>
 
           {location.pathname === "/" && (
-            <div className="hide-on-mobile" style={{ 
-              display: "flex", 
-              gap: "32px", 
+            <div className="hide-on-mobile" style={{
+              display: "flex",
+              gap: "32px",
               alignItems: "center",
-              fontSize: "14px", 
+              fontSize: "14px",
               fontWeight: "600",
               color: "var(--text-secondary)"
             }}>
@@ -133,10 +147,10 @@ function Layout({ children }) {
         {/* Global Search */}
         <div className="search-wrapper">
           <Search size={18} className="search-icon" />
-          <input 
-            type="text" 
-            placeholder="Search peers, skills, hackathons..." 
-            className="search-input" 
+          <input
+            type="text"
+            placeholder="Search peers, skills, hackathons..."
+            className="search-input"
           />
         </div>
 
@@ -154,13 +168,13 @@ function Layout({ children }) {
               borderRadius: "50%"
             }}></span>
           </button>
-          
+
           {/* User Profile Dropdown Toggle */}
           <div style={{ position: "relative" }}>
-            <img 
-              src={MOCK_USER.avatar} 
-              alt={MOCK_USER.name} 
-              className="avatar" 
+            <img
+              src={MOCK_USER.avatar}
+              alt={MOCK_USER.name}
+              className="avatar"
               style={{ width: "38px", height: "38px", cursor: "pointer" }}
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
             />
@@ -178,18 +192,18 @@ function Layout({ children }) {
                 background: "var(--bg-tertiary)",
                 boxShadow: "var(--shadow-lg)"
               }}>
-                <Link 
-                  to="/profile" 
-                  className="sidebar-link" 
+                <Link
+                  to="/profile"
+                  className="sidebar-link"
                   style={{ padding: "8px 12px", fontSize: "14px" }}
                   onClick={() => setShowProfileDropdown(false)}
                 >
                   <User size={16} />
                   <span>My Profile</span>
                 </Link>
-                <button 
-                  onClick={handleLogout} 
-                  className="sidebar-link" 
+                <button
+                  onClick={handleLogout}
+                  className="sidebar-link"
                   style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 12px", fontSize: "14px", cursor: "pointer" }}
                 >
                   <LogOut size={16} style={{ color: "var(--danger)" }} />
@@ -203,15 +217,15 @@ function Layout({ children }) {
 
       {/* Main Content Layout Grid */}
       <div className="main-layout">
-        
+
         {/* Left Navigation Sidebar */}
         <aside className="sidebar">
           {/* Quick Profile Summary Widget */}
           <div className="glass-card" style={{ padding: "16px", textAlign: "center", marginBottom: "10px" }}>
-            <img 
-              src={MOCK_USER.avatar} 
-              alt={MOCK_USER.name} 
-              className="avatar avatar-ring" 
+            <img
+              src={MOCK_USER.avatar}
+              alt={MOCK_USER.name}
+              className="avatar avatar-ring"
               style={{ width: "68px", height: "68px", marginBottom: "12px" }}
             />
             <h4 style={{ fontSize: "16px", fontWeight: "700" }}>{MOCK_USER.name}</h4>
@@ -284,12 +298,12 @@ function Layout({ children }) {
                     <div className="widget-item-name">{peer.name}</div>
                     <div className="widget-item-sub">{peer.title}</div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => handleConnect(peer.id)}
-                    className="btn" 
-                    style={{ 
-                      padding: "6px", 
-                      borderRadius: "8px", 
+                    className="btn"
+                    style={{
+                      padding: "6px",
+                      borderRadius: "8px",
                       fontSize: "12px",
                       background: connectedIds.includes(peer.id) ? "var(--bg-tertiary)" : "var(--primary-gradient)",
                       color: "#fff",
