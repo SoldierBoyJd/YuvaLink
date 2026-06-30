@@ -1,361 +1,358 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { 
-  Send, 
-  Heart, 
-  MessageSquare, 
-  Share2, 
-  Image, 
-  Code, 
-  Lightbulb, 
-  HelpCircle,
-  Clock,
-  Sparkles
+import {
+  Send, Heart, MessageSquare, Share2, Image, Code,
+  Lightbulb, HelpCircle, Clock, Sparkles, Loader, X, Trash2
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { supabase } from "../config/supabase";
 
 const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
 
-const INITIAL_POSTS = [
-  {
-    id: 1,
-    author: {
-      name: "Sophia Martinez",
-      title: "UI/UX Student at Creative College",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"
-    },
-    content: "Just finalized the wireframes for our team's project on YuvaLink! Looking for a frontend developer who knows React + CSS Grid to co-build. DM me if interested! 🚀",
-    tag: "Project Partner",
-    likes: 18,
-    comments: [
-      { author: "Zara Chen", text: "Wow, wireframes look extremely neat! Sending you a request." },
-      { author: "Marcus Johnson", text: "I'd love to help out with the React logic!" }
-    ],
-    timestamp: "2 hours ago",
-    liked: false
-  },
-  {
-    id: 2,
-    author: {
-      name: "Marcus Johnson",
-      title: "ML Engineering Student at ScienceTech",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
-    },
-    content: "Has anyone explored the new OpenAI API updates? I am writing a wrapper in Node.js for a student helper tool. Hit me up if you want to collaborate or check the repo out.",
-    tag: "Code Help",
-    likes: 8,
-    comments: [],
-    timestamp: "5 hours ago",
-    liked: false
-  },
-  {
-    id: 3,
-    author: {
-      name: "Dhruv Mehta",
-      title: "Full Stack Developer at Delhi College of Eng.",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-    },
-    content: "Super thrilled to share that we won 2nd place at the CityHack 2026! Huge shoutout to my co-builders whom I met through local peer groups. Networking pays off!",
-    tag: "Achievement",
-    likes: 34,
-    comments: [
-      { author: "Sophia Martinez", text: "Big congratulations Dhruv! Well deserved." }
-    ],
-    timestamp: "1 day ago",
-    liked: true
-  }
+function timeAgo(dateStr) {
+  const diff = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+const TAGS = [
+  { name: "Idea",           icon: <Lightbulb size={12} /> },
+  { name: "Project Partner",icon: <Code size={12} /> },
+  { name: "Code Help",      icon: <HelpCircle size={12} /> },
+  { name: "Achievement",    icon: <Sparkles size={12} /> },
 ];
 
 function Dashboard() {
-  const { profile } = useAuth();
-  const [posts, setPosts] = useState(INITIAL_POSTS);
+  const { user, profile } = useAuth();
+  const [posts, setPosts]               = useState([]);
+  const [feedLoading, setFeedLoading]   = useState(true);
   const [newPostContent, setNewPostContent] = useState("");
-  const [selectedTag, setSelectedTag] = useState("Idea");
-  const [commentInputs, setCommentInputs] = useState({});
+  const [selectedTag, setSelectedTag]   = useState("Idea");
+  const [posting, setPosting]           = useState(false);
+  const [imageFile, setImageFile]       = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [commentInputs, setCommentInputs]   = useState({});
   const [expandedPostIds, setExpandedPostIds] = useState([]);
+  const [commentsMap, setCommentsMap]   = useState({});
+  const [loadingComments, setLoadingComments] = useState({});
+  const fileInputRef = useRef(null);
 
-  const toggleComments = (postId) => {
-    setExpandedPostIds(prev => 
-      prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]
-    );
-  };
+  // ── Fetch feed ──────────────────────────────────────────────────────────────
+  const fetchPosts = async () => {
+    setFeedLoading(true);
+    const { data, error } = await supabase
+      .from("posts")
+      .select(`
+        id, content, tag, image_url, likes_count, created_at, user_id,
+        profiles ( full_name, title, department, avatar_url )
+      `)
+      .order("created_at", { ascending: false })
+      .limit(30);
 
-  const handleCreatePost = (e) => {
-    e.preventDefault();
-    if (!newPostContent.trim()) {
-      toast.error("Please write something to share!");
-      return;
+    if (error) { toast.error("Failed to load feed"); setFeedLoading(false); return; }
+
+    // Check which posts the current user has liked
+    let likedSet = new Set();
+    if (user) {
+      const { data: likesData } = await supabase
+        .from("post_likes")
+        .select("post_id")
+        .eq("user_id", user.id);
+      if (likesData) likesData.forEach(l => likedSet.add(l.post_id));
     }
 
-    const newPost = {
-      id: posts.length + 1,
+    setPosts((data || []).map(p => ({
+      ...p,
+      liked: likedSet.has(p.id),
       author: {
-        name: profile?.full_name || "You",
-        title: profile?.department || profile?.title || "Student",
-        avatar: profile?.avatar_url || FALLBACK_AVATAR
+        name:   p.profiles?.full_name   || "Unknown",
+        title:  p.profiles?.title       || p.profiles?.department || "Student",
+        avatar: p.profiles?.avatar_url  || FALLBACK_AVATAR,
       },
-      content: newPostContent,
-      tag: selectedTag,
-      likes: 0,
-      comments: [],
-      timestamp: "Just now",
-      liked: false
-    };
-
-    setPosts([newPost, ...posts]);
-    setNewPostContent("");
-    toast.success("Post published successfully!");
+    })));
+    setFeedLoading(false);
   };
 
-  const handleLike = (id) => {
-    setPosts(prevPosts => 
-      prevPosts.map(post => {
-        if (post.id === id) {
-          return {
-            ...post,
-            liked: !post.liked,
-            likes: post.liked ? post.likes - 1 : post.likes + 1
-          };
-        }
-        return post;
-      })
-    );
+  useEffect(() => { fetchPosts(); }, [user]);
+
+  // ── Image picker ─────────────────────────────────────────────────────────────
+  const handleImagePick = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5 MB"); return; }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
-  const handleCommentSubmit = (postId, e) => {
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Upload image to Supabase Storage ─────────────────────────────────────────
+  const uploadImage = async (file) => {
+    const ext  = file.name.split(".").pop();
+    const path = `${user.id}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("post-images").upload(path, file);
+    if (error) throw error;
+    const { data } = supabase.storage.from("post-images").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  // ── Create post ──────────────────────────────────────────────────────────────
+  const handleCreatePost = async (e) => {
     e.preventDefault();
-    const commentText = commentInputs[postId] || "";
-    if (!commentText.trim()) return;
+    if (!newPostContent.trim() && !imageFile) {
+      toast.error("Write something or attach an image!");
+      return;
+    }
+    if (!user) return;
+    setPosting(true);
+    try {
+      let image_url = null;
+      if (imageFile) image_url = await uploadImage(imageFile);
 
-    setPosts(prevPosts => 
-      prevPosts.map(post => {
-        if (post.id === postId) {
-          return {
-            ...post,
-            comments: [...post.comments, { author: profile?.full_name || "You", text: commentText }]
-          };
-        }
-        return post;
-      })
-    );
+      const { data, error } = await supabase
+        .from("posts")
+        .insert({ user_id: user.id, content: newPostContent, tag: selectedTag, image_url })
+        .select(`id, content, tag, image_url, likes_count, created_at, user_id,
+                 profiles ( full_name, title, department, avatar_url )`)
+        .single();
 
-    setCommentInputs(prev => ({ ...prev, [postId]: "" }));
-    toast.success("Comment added!");
+      if (error) throw error;
+
+      setPosts(prev => [{
+        ...data,
+        liked: false,
+        author: {
+          name:   data.profiles?.full_name   || profile?.full_name || "You",
+          title:  data.profiles?.title       || data.profiles?.department || "Student",
+          avatar: data.profiles?.avatar_url  || profile?.avatar_url || FALLBACK_AVATAR,
+        },
+      }, ...prev]);
+
+      setNewPostContent("");
+      clearImage();
+      toast.success("Post published!");
+    } catch (err) {
+      toast.error("Failed to post: " + err.message);
+    }
+    setPosting(false);
   };
 
+  // ── Like / unlike ────────────────────────────────────────────────────────────
+  const handleLike = async (postId) => {
+    if (!user) return;
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    // Optimistic update
+    setPosts(prev => prev.map(p =>
+      p.id === postId
+        ? { ...p, liked: !p.liked, likes_count: p.liked ? p.likes_count - 1 : p.likes_count + 1 }
+        : p
+    ));
+
+    if (post.liked) {
+      await supabase.from("post_likes").delete()
+        .eq("post_id", postId).eq("user_id", user.id);
+      await supabase.from("posts").update({ likes_count: post.likes_count - 1 }).eq("id", postId);
+    } else {
+      await supabase.from("post_likes").insert({ post_id: postId, user_id: user.id });
+      await supabase.from("posts").update({ likes_count: post.likes_count + 1 }).eq("id", postId);
+    }
+  };
+
+  // ── Delete own post ──────────────────────────────────────────────────────────
+  const handleDeletePost = async (postId) => {
+    const { error } = await supabase.from("posts").delete().eq("id", postId);
+    if (!error) {
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      toast.success("Post deleted");
+    }
+  };
+
+  // ── Load comments for a post ─────────────────────────────────────────────────
+  const loadComments = async (postId) => {
+    setLoadingComments(prev => ({ ...prev, [postId]: true }));
+    const { data } = await supabase
+      .from("comments")
+      .select("id, content, created_at, profiles ( full_name, avatar_url )")
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true });
+    setCommentsMap(prev => ({ ...prev, [postId]: data || [] }));
+    setLoadingComments(prev => ({ ...prev, [postId]: false }));
+  };
+
+  const toggleComments = (postId) => {
+    const isExpanded = expandedPostIds.includes(postId);
+    if (isExpanded) {
+      setExpandedPostIds(prev => prev.filter(id => id !== postId));
+    } else {
+      setExpandedPostIds(prev => [...prev, postId]);
+      if (!commentsMap[postId]) loadComments(postId);
+    }
+  };
+
+  // ── Submit comment ───────────────────────────────────────────────────────────
+  const handleCommentSubmit = async (postId, e) => {
+    e.preventDefault();
+    const text = (commentInputs[postId] || "").trim();
+    if (!text || !user) return;
+    const { data, error } = await supabase
+      .from("comments")
+      .insert({ post_id: postId, user_id: user.id, content: text })
+      .select("id, content, created_at, profiles ( full_name, avatar_url )")
+      .single();
+    if (!error && data) {
+      setCommentsMap(prev => ({ ...prev, [postId]: [...(prev[postId] || []), data] }));
+      setCommentInputs(prev => ({ ...prev, [postId]: "" }));
+    }
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="feed-grid animate-fade-in">
-      
-      {/* Create Post Section */}
+
+      {/* ── Create Post ── */}
       <div className="glass-card" style={{ padding: "24px" }}>
         <form onSubmit={handleCreatePost} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-            <img 
-              src={profile?.avatar_url || FALLBACK_AVATAR}
-              alt={profile?.full_name || "You"}
-              className="avatar" 
-              style={{ width: "42px", height: "42px" }}
-            />
+            <img src={profile?.avatar_url || FALLBACK_AVATAR} alt="You" className="avatar" style={{ width: "42px", height: "42px" }} />
             <textarea
               placeholder="What project are you building? Looking for collaborators?"
               className="glass-input"
-              style={{ 
-                width: "100%", 
-                minHeight: "80px", 
-                resize: "none", 
-                border: "none", 
-                background: "rgba(255,255,255,0.01)",
-                padding: "8px 0"
-              }}
+              style={{ width: "100%", minHeight: "80px", resize: "none", border: "none", background: "rgba(255,255,255,0.01)", padding: "8px 0" }}
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
             />
           </div>
 
-          <div style={{ 
-            display: "flex", 
-            flexWrap: "wrap", 
-            justifyContent: "space-between", 
-            alignItems: "center",
-            borderTop: "1px solid var(--card-border)",
-            paddingTop: "16px",
-            gap: "12px"
-          }}>
-            {/* Tag Selection pills */}
+          {/* Image preview */}
+          {imagePreview && (
+            <div style={{ position: "relative", borderRadius: "10px", overflow: "hidden", maxHeight: "200px" }}>
+              <img src={imagePreview} alt="preview" style={{ width: "100%", objectFit: "cover", maxHeight: "200px" }} />
+              <button type="button" onClick={clearImage} style={{ position: "absolute", top: "8px", right: "8px", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", color: "#fff", width: "28px", height: "28px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--card-border)", paddingTop: "16px", gap: "12px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-              {[
-                { name: "Idea", icon: <Lightbulb size={12} /> },
-                { name: "Project Partner", icon: <Code size={12} /> },
-                { name: "Code Help", icon: <HelpCircle size={12} /> },
-                { name: "Achievement", icon: <Sparkles size={12} /> }
-              ].map(tag => (
-                <button
-                  key={tag.name}
-                  type="button"
-                  onClick={() => setSelectedTag(tag.name)}
-                  className="badge"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    cursor: "pointer",
-                    border: "1px solid var(--card-border)",
-                    background: selectedTag === tag.name ? "var(--primary-glow)" : "transparent",
-                    color: selectedTag === tag.name ? "var(--primary)" : "var(--text-secondary)",
-                    transition: "all var(--transition-fast)"
-                  }}
-                >
-                  {tag.icon}
-                  <span>{tag.name}</span>
+              {TAGS.map(tag => (
+                <button key={tag.name} type="button" onClick={() => setSelectedTag(tag.name)} className="badge"
+                  style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", border: "1px solid var(--card-border)", background: selectedTag === tag.name ? "var(--primary-glow)" : "transparent", color: selectedTag === tag.name ? "var(--primary)" : "var(--text-secondary)", transition: "all var(--transition-fast)" }}>
+                  {tag.icon}<span>{tag.name}</span>
                 </button>
               ))}
             </div>
-
             <div style={{ display: "flex", gap: "8px" }}>
-              <button 
-                type="button" 
-                className="btn-icon" 
-                style={{ width: "38px", height: "38px" }}
-                onClick={() => toast.success("Mock image attachment trigger!")}
-                aria-label="Add image"
-              >
+              {/* Hidden file input */}
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImagePick} />
+              <button type="button" className="btn-icon" style={{ width: "38px", height: "38px", color: imageFile ? "var(--primary)" : undefined }} onClick={() => fileInputRef.current?.click()} aria-label="Add image">
                 <Image size={16} />
               </button>
-              <button type="submit" className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "14px", height: "38px" }}>
-                <span>Post</span>
-                <Send size={14} />
+              <button type="submit" className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "14px", height: "38px" }} disabled={posting}>
+                {posting ? <Loader size={14} className="animate-spin" /> : <><span>Post</span><Send size={14} /></>}
               </button>
             </div>
           </div>
         </form>
       </div>
 
-      {/* Feed Posts */}
-      {posts.map(post => (
+      {/* ── Feed ── */}
+      {feedLoading ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "60px", gap: "10px", color: "var(--text-secondary)" }}>
+          <Loader size={20} className="animate-spin" /><span>Loading feed...</span>
+        </div>
+      ) : posts.length === 0 ? (
+        <div className="glass-card" style={{ padding: "40px", textAlign: "center" }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: "15px" }}>No posts yet. Be the first to share something!</p>
+        </div>
+      ) : posts.map(post => (
         <div key={post.id} className="glass-card animate-fade-in" style={{ padding: "24px" }}>
-          
+
           {/* Post Header */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
             <div style={{ display: "flex", gap: "12px" }}>
               <img src={post.author.avatar} alt={post.author.name} className="avatar" style={{ width: "42px", height: "42px" }} />
               <div>
                 <h4 style={{ fontSize: "15px", fontWeight: "700" }}>{post.author.name}</h4>
-                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px", lineHeight: "1.4", textAlign: "left" }}>
-                  {post.author.title}
-                </p>
+                <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px", lineHeight: "1.4", textAlign: "left" }}>{post.author.title}</p>
                 <div style={{ fontSize: "11px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px", marginTop: "4px" }}>
-                  <Clock size={10} />
-                  <span>{post.timestamp}</span>
+                  <Clock size={10} /><span>{timeAgo(post.created_at)}</span>
                 </div>
               </div>
             </div>
-            
-            <span className={`badge ${
-              post.tag === "Achievement" ? "badge-secondary" :
-              post.tag === "Project Partner" ? "badge-primary" :
-              post.tag === "Code Help" ? "badge-danger" : "badge-primary"
-            }`} style={{ padding: "6px 12px" }}>
-              {post.tag}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span className={`badge ${post.tag === "Achievement" ? "badge-secondary" : post.tag === "Code Help" ? "badge-danger" : "badge-primary"}`} style={{ padding: "6px 12px" }}>
+                {post.tag}
+              </span>
+              {post.user_id === user?.id && (
+                <button onClick={() => handleDeletePost(post.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", padding: "4px" }} aria-label="Delete post">
+                  <Trash2 size={14} style={{ color: "var(--danger)" }} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Post Content */}
-          <p style={{ fontSize: "15px", color: "var(--text-primary)", lineHeight: "1.6", marginBottom: "18px", textAlign: "left" }}>
-            {post.content}
-          </p>
+          {post.content && (
+            <p style={{ fontSize: "15px", color: "var(--text-primary)", lineHeight: "1.6", marginBottom: "16px", textAlign: "left" }}>
+              {post.content}
+            </p>
+          )}
 
-          {/* Post Stats & Actions */}
-          <div style={{ 
-            display: "flex", 
-            justifyContent: "space-between", 
-            alignItems: "center",
-            paddingTop: "12px",
-            borderTop: "1px solid var(--card-border)",
-            fontSize: "13px",
-            color: "var(--text-secondary)"
-          }}>
-            <button 
-              onClick={() => handleLike(post.id)}
-              style={{ 
-                background: "none", 
-                border: "none", 
-                cursor: "pointer", 
-                display: "flex", 
-                alignItems: "center", 
-                gap: "6px",
-                color: post.liked ? "var(--danger)" : "var(--text-secondary)",
-                fontWeight: "600",
-                transition: "transform 0.2s"
-              }}
-              className="glow-effect"
-            >
+          {/* Post Image */}
+          {post.image_url && (
+            <div style={{ marginBottom: "16px", borderRadius: "10px", overflow: "hidden" }}>
+              <img src={post.image_url} alt="post attachment" style={{ width: "100%", maxHeight: "400px", objectFit: "cover", display: "block" }} />
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px", borderTop: "1px solid var(--card-border)", fontSize: "13px", color: "var(--text-secondary)" }}>
+            <button onClick={() => handleLike(post.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: post.liked ? "var(--danger)" : "var(--text-secondary)", fontWeight: "600" }}>
               <Heart size={16} fill={post.liked ? "var(--danger)" : "transparent"} />
-              <span>{post.likes} Likes</span>
+              <span>{post.likes_count} Likes</span>
             </button>
-
             <div style={{ display: "flex", gap: "16px" }}>
-              <button 
-                onClick={() => toggleComments(post.id)}
-                style={{ 
-                  background: "none", 
-                  border: "none", 
-                  cursor: "pointer", 
-                  display: "flex", 
-                  alignItems: "center", 
-                  gap: "6px", 
-                  color: "var(--text-secondary)",
-                  fontWeight: expandedPostIds.includes(post.id) ? "700" : "500"
-                }}
-              >
+              <button onClick={() => toggleComments(post.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)", fontWeight: expandedPostIds.includes(post.id) ? "700" : "500" }}>
                 <MessageSquare size={16} style={{ color: expandedPostIds.includes(post.id) ? "var(--primary)" : "inherit" }} />
-                <span>{post.comments.length} Comments</span>
+                <span>{(commentsMap[post.id] || []).length || ""} Comments</span>
               </button>
-              <button 
-                onClick={() => toast.success("Copied post share link!")}
-                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)" }}
-                aria-label="Share post"
-              >
-                <Share2 size={16} />
-                <span>Share</span>
+              <button onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/dashboard"); toast.success("Link copied!"); }} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)" }}>
+                <Share2 size={16} /><span>Share</span>
               </button>
             </div>
           </div>
 
-          {/* Comments section (visible only when clicked/expanded) */}
+          {/* Comments */}
           {expandedPostIds.includes(post.id) && (
             <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "16px" }}>
-              {post.comments.map((comment, index) => (
-                <div key={index} style={{ 
-                  display: "flex", 
-                  gap: "10px", 
-                  background: "var(--bg-tertiary)", 
-                  padding: "10px 14px", 
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  textAlign: "left"
-                }}>
-                  <span style={{ fontWeight: "700", color: "var(--text-primary)", whiteSpace: "nowrap" }}>{comment.author}:</span>
-                  <span style={{ color: "var(--text-secondary)" }}>{comment.text}</span>
+              {loadingComments[post.id] ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: "12px" }}><Loader size={16} className="animate-spin" style={{ color: "var(--text-muted)" }} /></div>
+              ) : (commentsMap[post.id] || []).map((comment) => (
+                <div key={comment.id} style={{ display: "flex", gap: "10px", background: "var(--bg-tertiary)", padding: "10px 14px", borderRadius: "10px", fontSize: "13px", textAlign: "left" }}>
+                  <img src={comment.profiles?.avatar_url || FALLBACK_AVATAR} alt={comment.profiles?.full_name} style={{ width: "26px", height: "26px", borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
+                  <div>
+                    <span style={{ fontWeight: "700", color: "var(--text-primary)" }}>{comment.profiles?.full_name || "User"}: </span>
+                    <span style={{ color: "var(--text-secondary)" }}>{comment.content}</span>
+                  </div>
                 </div>
               ))}
-
-              {/* Comment Form */}
               <form onSubmit={(e) => handleCommentSubmit(post.id, e)} style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
-                <input 
-                  type="text" 
-                  placeholder="Write a comment..." 
-                  className="glass-input" 
-                  style={{ width: "100%", padding: "8px 12px", fontSize: "13px", borderRadius: "8px" }}
-                  value={commentInputs[post.id] || ""}
-                  onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
-                />
-                <button type="submit" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", borderRadius: "8px" }}>
-                  Reply
-                </button>
+                <input type="text" placeholder="Write a comment..." className="glass-input" style={{ width: "100%", padding: "8px 12px", fontSize: "13px", borderRadius: "8px" }}
+                  value={commentInputs[post.id] || ""} onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))} />
+                <button type="submit" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", borderRadius: "8px" }}>Reply</button>
               </form>
             </div>
           )}
-
         </div>
       ))}
     </div>

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Search, MapPin, BookOpen, UserPlus, Check, MessageSquare, Loader } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +10,7 @@ const FALLBACK_COVER = "https://images.unsplash.com/photo-1618005182384-a83a8bd5
 
 function Discover() {
   const { user } = useAuth();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [peers, setPeers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,65 +28,70 @@ function Discover() {
     const fetchPeers = async () => {
       setLoading(true);
       // Fetch all profiles except current user
-      const query = supabase
+      let query = supabase
         .from("profiles")
         .select("id, full_name, title, department, location, avatar_url, cover_url, skills, bio");
 
-      if (user) query.neq("id", user.id);
+      if (user) query = query.neq("id", user.id);
 
       const { data, error } = await query;
       if (error) {
         toast.error("Failed to load peers");
         console.error(error);
       } else {
-        // Check which ones the user is already connected to
-        let connectedSet = new Set();
+        // Check connection status for each peer
+        let statusMap = {};
         if (user) {
-          const { data: conns } = await supabase
+          const { data: conns, error: connErr } = await supabase
             .from("connections")
-            .select("connected_user_id")
-            .eq("user_id", user.id)
-            .eq("status", "accepted");
-          if (conns) conns.forEach(c => connectedSet.add(c.connected_user_id));
+            .select("connected_user_id, status")
+            .eq("user_id", user.id);
+          if (connErr) console.error("Connection status fetch error:", connErr);
+          if (conns) conns.forEach(c => { statusMap[c.connected_user_id] = c.status; });
         }
-        setPeers((data || []).map(p => ({ ...p, connected: connectedSet.has(p.id) })));
+        setPeers((data || []).map(p => ({ ...p, connectionStatus: statusMap[p.id] || null })));
       }
       setLoading(false);
     };
     fetchPeers();
-  }, [user]);
+  }, [user, location.pathname]); // re-fetch when navigating back to this page
 
   const handleConnect = async (peerId, peerName) => {
     if (!user) return;
+    if (peerId === user.id) { toast.error("You can't connect with yourself!"); return; }
     setConnectingIds(prev => new Set(prev).add(peerId));
     const peer = peers.find(p => p.id === peerId);
 
-    if (peer?.connected) {
-      // Remove connection
-      await supabase.from("connections").delete()
-        .eq("user_id", user.id).eq("connected_user_id", peerId);
-      await supabase.from("connections").delete()
-        .eq("user_id", peerId).eq("connected_user_id", user.id);
-      setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connected: false } : p));
-      toast.success(`Removed connection with ${peerName}`);
+    if (peer?.connectionStatus === "accepted" || peer?.connectionStatus === "pending") {
+      // Cancel request or disconnect
+      const { error } = await supabase.rpc("disconnect_users", {
+        p_user_id: user.id,
+        p_peer_id: peerId,
+      });
+      if (error) { toast.error("Could not remove: " + error.message); }
+      else {
+        setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connectionStatus: null } : p));
+        toast.success(peer.connectionStatus === "pending" ? "Request cancelled" : `Removed connection with ${peerName}`);
+      }
     } else {
-      // Send connection request
-      const { error } = await supabase.from("connections").upsert([
-        { user_id: user.id, connected_user_id: peerId, status: "accepted" },
-        { user_id: peerId, connected_user_id: user.id, status: "accepted" }
-      ]);
+      // Send request
+      const { error } = await supabase.rpc("connect_users", {
+        p_user_id: user.id,
+        p_peer_id: peerId,
+      });
       if (error) { toast.error("Could not connect: " + error.message); }
       else {
-        setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connected: true } : p));
-        toast.success(`Connected with ${peerName}!`);
+        setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connectionStatus: "pending" } : p));
+        toast.success(`Request sent to ${peerName}!`);
 
         // Notify the other user
-        const senderName = (await supabase.from("profiles").select("full_name").eq("id", user.id).single()).data?.full_name || "Someone";
+        const { data: senderData } = await supabase.from("profiles").select("full_name").eq("id", user.id).single();
+        const senderName = senderData?.full_name || "Someone";
         await supabase.from("notifications").insert({
           user_id: peerId,
           actor_id: user.id,
-          type: "connection",
-          message: `${senderName} connected with you on YuvaLink!`,
+          type: "connection_request",
+          message: `${senderName} sent you a connection request!`,
         });
       }
     }
@@ -174,10 +180,19 @@ function Discover() {
                     onClick={() => handleConnect(peer.id, peer.full_name)}
                     disabled={connectingIds.has(peer.id)}
                     className="btn"
-                    style={{ flex: 1, fontSize: "13px", padding: "8px 12px", background: peer.connected ? "var(--bg-tertiary)" : "var(--primary-gradient)", color: peer.connected ? "var(--text-primary)" : "#fff", border: peer.connected ? "1px solid var(--card-border)" : "none" }}
+                    style={{
+                      flex: 1, fontSize: "13px", padding: "8px 12px",
+                      background: peer.connectionStatus === "accepted" ? "var(--bg-tertiary)" :
+                                  peer.connectionStatus === "pending"   ? "rgba(139,92,246,0.15)" : "var(--primary-gradient)",
+                      color: peer.connectionStatus === "accepted" ? "var(--text-primary)" :
+                             peer.connectionStatus === "pending"   ? "var(--primary)" : "#fff",
+                      border: peer.connectionStatus ? "1px solid var(--card-border)" : "none",
+                    }}
                   >
-                    {peer.connected
+                    {peer.connectionStatus === "accepted"
                       ? <span style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}><Check size={14} /> Connected</span>
+                      : peer.connectionStatus === "pending"
+                      ? <span style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}>⏳ Request Sent</span>
                       : <span style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}><UserPlus size={14} /> Connect</span>
                     }
                   </button>
