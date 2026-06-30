@@ -5,8 +5,10 @@ import { useNavigate } from "react-router-dom";
 const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
 
 const TYPE_ICON = {
-  connection: <UserPlus size={14} style={{ color: "var(--primary)" }} />,
-  default:    <Bell size={14} style={{ color: "var(--text-muted)" }} />,
+  connection_request:  <UserPlus size={14} style={{ color: "var(--primary)" }} />,
+  connection_accepted: <Check size={14} style={{ color: "#10b981" }} />,
+  connection:          <UserPlus size={14} style={{ color: "var(--primary)" }} />,
+  default:             <Bell size={14} style={{ color: "var(--text-muted)" }} />,
 };
 
 function timeAgo(dateStr) {
@@ -32,7 +34,7 @@ export default function NotificationPanel({ notifications, loading, unreadCount,
 
   const handleNotifClick = (notif) => {
     onMarkOneRead(notif.id);
-    if (notif.type === "connection") navigate("/connections");
+    if (notif.type === "connection" || notif.type === "connection_request" || notif.type === "connection_accepted") navigate("/connections");
     onClose();
   };
 

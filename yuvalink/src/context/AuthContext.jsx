@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { supabase } from "../config/supabase";
 
 const AuthContext = createContext(null);
@@ -11,27 +11,47 @@ const parseJsonField = (value) => {
   return [];
 };
 
+// Compute profile completion % based on filled fields
+function computeCompletion(data) {
+  const fields = [
+    data.full_name, data.department, data.bio, data.avatar_url,
+    data.location, data.title, data.github || data.github_url,
+    data.linkedin || data.linkedin_url,
+  ];
+  const arrayFields = [
+    parseJsonField(data.skills).length > 0,
+    parseJsonField(data.projects).length > 0,
+  ];
+  const filled = fields.filter(Boolean).length + arrayFields.filter(Boolean).length;
+  return Math.round((filled / (fields.length + arrayFields.length)) * 100);
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Cache: avoid re-fetching if userId hasn't changed
+  const lastFetchedUserId = useRef(null);
 
   const fetchProfile = async (userId) => {
-    if (!userId) {
-      setProfile(null);
+    if (!userId) { setProfile(null); lastFetchedUserId.current = null; return; }
+
+    // Fetch profile + connections count in parallel
+    const [profileResult, connResult] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      supabase.from("connections").select("id", { count: "exact", head: true })
+        .eq("user_id", userId).eq("status", "accepted"),
+    ]);
+
+    if (profileResult.error) {
+      console.error("Error fetching profile:", profileResult.error);
       return;
     }
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
 
-    if (error) {
-      console.error("Error fetching profile:", error);
-    } else if (data) {
-      // Normalize json fields — column may be text type instead of jsonb
-      // Also handle both github_url/linkedin_url (old) and github/linkedin (new) column names
+    const data = profileResult.data;
+    if (data) {
+      const connectionsCount = connResult.count ?? 0;
+      const completion = computeCompletion(data);
       setProfile({
         ...data,
         github: data.github || data.github_url || "",
@@ -39,21 +59,22 @@ export function AuthProvider({ children }) {
         skills: parseJsonField(data.skills),
         projects: parseJsonField(data.projects),
         experience: parseJsonField(data.experience),
+        connections_count: connectionsCount,
+        profile_completion: completion,
       });
+      lastFetchedUserId.current = userId;
     } else {
       setProfile(null);
     }
   };
 
   useEffect(() => {
-    // Get the initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       fetchProfile(currentUser?.id).finally(() => setLoading(false));
     });
 
-    // Listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         const currentUser = session?.user ?? null;
@@ -66,7 +87,6 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Call this after updating the profile in Supabase to refresh context
   const refreshProfile = () => fetchProfile(user?.id);
 
   return (

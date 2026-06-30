@@ -36,8 +36,7 @@ function Discover() {
 
       const { data, error } = await query;
       if (error) {
-        toast.error("Failed to load peers");
-        console.error(error);
+        console.error("Failed to load peers:", error);
       } else {
         // Check connection status for each peer
         let statusMap = {};

@@ -47,12 +47,12 @@ function Dashboard() {
       .from("posts")
       .select(`
         id, content, tag, image_url, likes_count, created_at, user_id,
-        profiles ( full_name, title, department, avatar_url )
+        profiles!posts_user_id_fkey ( full_name, title, department, avatar_url )
       `)
       .order("created_at", { ascending: false })
       .limit(30);
 
-    if (error) { toast.error("Failed to load feed"); setFeedLoading(false); return; }
+    if (error) { console.error("Failed to load feed:", error); setFeedLoading(false); return; }
 
     // Check which posts the current user has liked
     let likedSet = new Set();
@@ -77,6 +77,37 @@ function Dashboard() {
   };
 
   useEffect(() => { fetchPosts(); }, [user]);
+
+  // ── Realtime: new posts appear instantly ─────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("realtime:posts")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" },
+        async (payload) => {
+          // Fetch the full post with profile join
+          const { data } = await supabase
+            .from("posts")
+            .select(`id, content, tag, image_url, likes_count, created_at, user_id,
+                     profiles!posts_user_id_fkey ( full_name, title, department, avatar_url )`)
+            .eq("id", payload.new.id)
+            .single();
+          if (data && data.user_id !== user.id) { // own posts already added optimistically
+            setPosts(prev => [{
+              ...data,
+              liked: false,
+              author: {
+                name:   data.profiles?.full_name  || "Unknown",
+                title:  data.profiles?.title      || data.profiles?.department || "Student",
+                avatar: data.profiles?.avatar_url || FALLBACK_AVATAR,
+              }
+            }, ...prev]);
+          }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user]);
 
   // ── Image picker ─────────────────────────────────────────────────────────────
   const handleImagePick = (e) => {
@@ -120,7 +151,7 @@ function Dashboard() {
         .from("posts")
         .insert({ user_id: user.id, content: newPostContent, tag: selectedTag, image_url })
         .select(`id, content, tag, image_url, likes_count, created_at, user_id,
-                 profiles ( full_name, title, department, avatar_url )`)
+                 profiles!posts_user_id_fkey ( full_name, title, department, avatar_url )`)
         .single();
 
       if (error) throw error;
@@ -181,7 +212,7 @@ function Dashboard() {
     setLoadingComments(prev => ({ ...prev, [postId]: true }));
     const { data } = await supabase
       .from("comments")
-      .select("id, content, created_at, profiles ( full_name, avatar_url )")
+      .select("id, content, created_at, user_id, profiles!comments_user_id_fkey ( full_name, avatar_url )")
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
     setCommentsMap(prev => ({ ...prev, [postId]: data || [] }));
@@ -206,11 +237,22 @@ function Dashboard() {
     const { data, error } = await supabase
       .from("comments")
       .insert({ post_id: postId, user_id: user.id, content: text })
-      .select("id, content, created_at, profiles ( full_name, avatar_url )")
+      .select("id, content, created_at, user_id, profiles!comments_user_id_fkey ( full_name, avatar_url )")
       .single();
     if (!error && data) {
       setCommentsMap(prev => ({ ...prev, [postId]: [...(prev[postId] || []), data] }));
       setCommentInputs(prev => ({ ...prev, [postId]: "" }));
+    }
+  };
+
+  // ── Delete comment ────────────────────────────────────────────────────────────
+  const handleDeleteComment = async (postId, commentId) => {
+    const { error } = await supabase.from("comments").delete().eq("id", commentId);
+    if (!error) {
+      setCommentsMap(prev => ({
+        ...prev,
+        [postId]: (prev[postId] || []).filter(c => c.id !== commentId)
+      }));
     }
   };
 
@@ -324,9 +366,9 @@ function Dashboard() {
             <div style={{ display: "flex", gap: "16px" }}>
               <button onClick={() => toggleComments(post.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)", fontWeight: expandedPostIds.includes(post.id) ? "700" : "500" }}>
                 <MessageSquare size={16} style={{ color: expandedPostIds.includes(post.id) ? "var(--primary)" : "inherit" }} />
-                <span>{(commentsMap[post.id] || []).length || ""} Comments</span>
+                <span>{commentsMap[post.id]?.length ?? ""} Comments</span>
               </button>
-              <button onClick={() => { navigator.clipboard?.writeText(window.location.origin + "/dashboard"); toast.success("Link copied!"); }} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)" }}>
+              <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/dashboard#post-${post.id}`); toast.success("Link copied!"); }} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", color: "var(--text-secondary)" }}>
                 <Share2 size={16} /><span>Share</span>
               </button>
             </div>
@@ -338,12 +380,17 @@ function Dashboard() {
               {loadingComments[post.id] ? (
                 <div style={{ display: "flex", justifyContent: "center", padding: "12px" }}><Loader size={16} className="animate-spin" style={{ color: "var(--text-muted)" }} /></div>
               ) : (commentsMap[post.id] || []).map((comment) => (
-                <div key={comment.id} style={{ display: "flex", gap: "10px", background: "var(--bg-tertiary)", padding: "10px 14px", borderRadius: "10px", fontSize: "13px", textAlign: "left" }}>
+                <div key={comment.id} style={{ display: "flex", gap: "10px", background: "var(--bg-tertiary)", padding: "10px 14px", borderRadius: "10px", fontSize: "13px", textAlign: "left", alignItems: "flex-start" }}>
                   <img src={comment.profiles?.avatar_url || FALLBACK_AVATAR} alt={comment.profiles?.full_name} style={{ width: "26px", height: "26px", borderRadius: "50%", flexShrink: 0, objectFit: "cover" }} />
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: "700", color: "var(--text-primary)" }}>{comment.profiles?.full_name || "User"}: </span>
                     <span style={{ color: "var(--text-secondary)" }}>{comment.content}</span>
                   </div>
+                  {comment.user_id === user?.id && (
+                    <button onClick={() => handleDeleteComment(post.id, comment.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0, display: "flex", flexShrink: 0 }} aria-label="Delete comment">
+                      <Trash2 size={12} style={{ color: "var(--danger)" }} />
+                    </button>
+                  )}
                 </div>
               ))}
               <form onSubmit={(e) => handleCommentSubmit(post.id, e)} style={{ display: "flex", gap: "10px", marginTop: "4px" }}>

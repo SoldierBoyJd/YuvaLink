@@ -249,9 +249,9 @@ function Profile() {
               </button>
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
-              {profileData.github && <a href={`https://github.com/${profileData.github}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px" }}><Github size={15} /></a>}
-              {profileData.linkedin && <a href={`https://linkedin.com/in/${profileData.linkedin}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px" }}><Linkedin size={15} /></a>}
-              {profileData.website && <a href={`https://${profileData.website}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px" }}><Globe size={15} /></a>}
+              <a href={profileData.github ? `https://github.com/${profileData.github}` : "#"} target={profileData.github ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.github ? 1 : 0.4 }} title={profileData.github ? `github.com/${profileData.github}` : "Add GitHub in Edit Profile"}><Github size={15} /></a>
+              <a href={profileData.linkedin ? `https://linkedin.com/in/${profileData.linkedin}` : "#"} target={profileData.linkedin ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.linkedin ? 1 : 0.4 }} title={profileData.linkedin ? `linkedin.com/in/${profileData.linkedin}` : "Add LinkedIn in Edit Profile"}><Linkedin size={15} /></a>
+              <a href={profileData.website ? `https://${profileData.website}` : "#"} target={profileData.website ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.website ? 1 : 0.4 }} title={profileData.website || "Add website in Edit Profile"}><Globe size={15} /></a>
               <button onClick={() => setIsEditingInfo(true)} className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "13px", gap: "6px" }}>
                 <Edit3 size={14} /><span>Edit Profile</span>
               </button>

@@ -25,13 +25,6 @@ import toast from "react-hot-toast";
 // Fallback avatar when profile has no avatar_url
 const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
 
-
-const SUGGESTED_CONNECTIONS = [
-  { id: 1, name: "Zara Chen", title: "UI/UX Student", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop" },
-  { id: 2, name: "Marcus Johnson", title: "ML Enthusiast", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop" },
-  { id: 3, name: "Priya Sharma", title: "Fullstack Intern", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop" }
-];
-
 const TRENDING_OPPORTUNITIES = [
   { id: 1, title: "Google Summer of Code 2026", type: "Open Source", deadline: "In 5 days" },
   { id: 2, title: "Figma UX Design Mentorship", type: "Mentorship", deadline: "In 2 weeks" },
@@ -47,9 +40,29 @@ function Layout({ children }) {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [connectedIds, setConnectedIds] = useState([]);
+  const [suggestedPeers, setSuggestedPeers] = useState([]);
 
   // Check path - bypass layout for Landing, Login, and Register
   const isAuthOrLanding = ["/", "/login", "/register"].includes(location.pathname);
+
+  // Fetch real suggested peers (users not already connected, limit 3)
+  useEffect(() => {
+    if (isAuthOrLanding || !profile) return;
+    const fetchSuggested = async () => {
+      // Get already-connected IDs
+      const { data: conns } = await supabase
+        .from("connections").select("connected_user_id").eq("user_id", profile.id);
+      const excludeIds = [profile.id, ...(conns || []).map(c => c.connected_user_id)];
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name, title, department, avatar_url")
+        .not("id", "in", `(${excludeIds.join(",")})`)
+        .limit(3);
+      setSuggestedPeers(data || []);
+    };
+    fetchSuggested();
+  }, [profile?.id, isAuthOrLanding]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", "dark");
@@ -315,25 +328,21 @@ function Layout({ children }) {
               <Sparkles size={16} style={{ color: "var(--secondary)" }} />
             </h3>
             <div className="widget-list">
-              {SUGGESTED_CONNECTIONS.map(peer => (
+              {suggestedPeers.length === 0 ? (
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
+                  No suggestions yet
+                </p>
+              ) : suggestedPeers.map(peer => (
                 <div key={peer.id} className="widget-item">
-                  <img src={peer.avatar} alt={peer.name} className="avatar" style={{ width: "36px", height: "36px" }} />
+                  <img src={peer.avatar_url || FALLBACK_AVATAR} alt={peer.full_name} className="avatar" style={{ width: "36px", height: "36px" }} />
                   <div className="widget-item-info">
-                    <div className="widget-item-name">{peer.name}</div>
-                    <div className="widget-item-sub">{peer.title}</div>
+                    <div className="widget-item-name">{peer.full_name}</div>
+                    <div className="widget-item-sub">{peer.title || peer.department || "Student"}</div>
                   </div>
                   <button
-                    onClick={() => handleConnect(peer.id)}
+                    onClick={() => { navigate("/discover"); }}
                     className="btn"
-                    style={{
-                      padding: "6px",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      background: connectedIds.includes(peer.id) ? "var(--bg-tertiary)" : "var(--primary-gradient)",
-                      color: "#fff",
-                      minWidth: "32px",
-                      height: "32px"
-                    }}
+                    style={{ padding: "6px", borderRadius: "8px", fontSize: "12px", background: "var(--primary-gradient)", color: "#fff", minWidth: "32px", height: "32px" }}
                     aria-label="Connect"
                   >
                     <UserPlus size={14} />

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Users, UserCheck, MessageSquare, Search, Sparkles, UserMinus, Loader, Bell
+  Users, UserCheck, MessageSquare, Search, UserMinus, Loader, Bell
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
@@ -99,6 +99,17 @@ function Connections() {
       setInvitations(prev => prev.filter(i => i.id !== inviter.id));
       setConnections(prev => [...prev, { ...inviter, location: "" }]);
       toast.success(`You're now connected with ${inviter.name}!`);
+
+      // Notify the original sender that their request was accepted
+      const { data: acceptorData } = await supabase
+        .from("profiles").select("full_name").eq("id", user.id).single();
+      const acceptorName = acceptorData?.full_name || "Someone";
+      await supabase.from("notifications").insert({
+        user_id: inviter.id,
+        actor_id: user.id,
+        type: "connection_accepted",
+        message: `${acceptorName} accepted your connection request!`,
+      });
     } else {
       toast.error("Could not accept: " + error.message);
     }
