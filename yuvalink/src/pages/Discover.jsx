@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, MapPin, BookOpen, UserPlus, Check, MessageSquare, Loader } from "lucide-react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -14,15 +14,15 @@ function Discover() {
   const [searchParams] = useSearchParams();
   const [peers, setPeers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
+  // Derive search query from URL param — no setState needed
+  const urlQuery = useMemo(() => searchParams.get("q") || "", [searchParams]);
+  const [searchQuery, setSearchQuery] = useState(urlQuery);
+
+  // Keep local search box in sync when URL param changes
+  useEffect(() => { setSearchQuery(urlQuery); }, [urlQuery]);
+
   const [selectedSkill, setSelectedSkill] = useState("All");
   const [connectingIds, setConnectingIds] = useState(new Set());
-
-  // Sync URL param into search box when navigated from global search
-  useEffect(() => {
-    const q = searchParams.get("q");
-    if (q) setSearchQuery(q);
-  }, [searchParams]);
 
   useEffect(() => {
     const fetchPeers = async () => {

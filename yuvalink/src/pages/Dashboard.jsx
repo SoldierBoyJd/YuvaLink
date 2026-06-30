@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   Send, Heart, MessageSquare, Share2, Image, Code,
@@ -41,7 +41,7 @@ function Dashboard() {
   const fileInputRef = useRef(null);
 
   // ── Fetch feed ──────────────────────────────────────────────────────────────
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setFeedLoading(true);
     const { data, error } = await supabase
       .from("posts")
@@ -54,13 +54,10 @@ function Dashboard() {
 
     if (error) { console.error("Failed to load feed:", error); setFeedLoading(false); return; }
 
-    // Check which posts the current user has liked
     let likedSet = new Set();
     if (user) {
       const { data: likesData } = await supabase
-        .from("post_likes")
-        .select("post_id")
-        .eq("user_id", user.id);
+        .from("post_likes").select("post_id").eq("user_id", user.id);
       if (likesData) likesData.forEach(l => likedSet.add(l.post_id));
     }
 
@@ -68,15 +65,15 @@ function Dashboard() {
       ...p,
       liked: likedSet.has(p.id),
       author: {
-        name:   p.profiles?.full_name   || "Unknown",
-        title:  p.profiles?.title       || p.profiles?.department || "Student",
-        avatar: p.profiles?.avatar_url  || FALLBACK_AVATAR,
+        name:   p.profiles?.full_name  || "Unknown",
+        title:  p.profiles?.title      || p.profiles?.department || "Student",
+        avatar: p.profiles?.avatar_url || FALLBACK_AVATAR,
       },
     })));
     setFeedLoading(false);
-  };
+  }, [user]);
 
-  useEffect(() => { fetchPosts(); }, [user]);
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
   // ── Realtime: new posts appear instantly ─────────────────────────────────────
   useEffect(() => {
