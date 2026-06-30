@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../hooks/useNotifications";
+import NotificationPanel from "../components/NotificationPanel";
+import GlobalSearch from "../components/GlobalSearch";
 import toast from "react-hot-toast";
 
 
@@ -40,7 +43,9 @@ function Layout({ children }) {
   const navigate = useNavigate();
   const theme = "dark";
   const { profile } = useAuth();
+  const { notifications, loading: notifsLoading, unreadCount, markAllRead, markOneRead } = useNotifications();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [connectedIds, setConnectedIds] = useState([]);
 
   // Check path - bypass layout for Landing, Login, and Register
@@ -140,29 +145,51 @@ function Layout({ children }) {
         </div>
 
         {/* Global Search */}
-        <div className="search-wrapper">
-          <Search size={18} className="search-icon" />
-          <input
-            type="text"
-            placeholder="Search peers, skills, hackathons..."
-            className="search-input"
-          />
-        </div>
+        <GlobalSearch />
 
         <div className="topbar-actions">
 
-          <button className="btn-icon" aria-label="Notifications" style={{ position: "relative" }}>
-            <Bell size={18} />
-            <span style={{
-              position: "absolute",
-              top: "10px",
-              right: "10px",
-              width: "8px",
-              height: "8px",
-              backgroundColor: "var(--danger)",
-              borderRadius: "50%"
-            }}></span>
-          </button>
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn-icon"
+              aria-label="Notifications"
+              onClick={() => { setShowNotifications(p => !p); setShowProfileDropdown(false); }}
+              style={{ position: "relative" }}
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: "absolute",
+                  top: "6px",
+                  right: "6px",
+                  minWidth: "16px",
+                  height: "16px",
+                  background: "var(--danger)",
+                  borderRadius: "999px",
+                  fontSize: "10px",
+                  fontWeight: "700",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 3px",
+                  lineHeight: 1,
+                }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+            {showNotifications && (
+              <NotificationPanel
+                notifications={notifications}
+                loading={notifsLoading}
+                unreadCount={unreadCount}
+                onMarkAllRead={markAllRead}
+                onMarkOneRead={markOneRead}
+                onClose={() => setShowNotifications(false)}
+              />
+            )}
+          </div>
 
           {/* User Profile Dropdown Toggle */}
           <div style={{ position: "relative" }}>
@@ -171,7 +198,7 @@ function Layout({ children }) {
               alt={profile?.full_name || "User"}
               className="avatar"
               style={{ width: "38px", height: "38px", cursor: "pointer" }}
-              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+              onClick={() => { setShowProfileDropdown(!showProfileDropdown); setShowNotifications(false); }}
             />
             {showProfileDropdown && (
               <div className="glass-card" style={{

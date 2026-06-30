@@ -24,36 +24,38 @@ function Connections() {
     if (!user) return;
     const fetchConnections = async () => {
       setLoading(true);
-      // Fetch accepted connections with the connected user's profile
-      const { data, error } = await supabase
+      // Step 1: get connected user IDs
+      const { data: connData, error } = await supabase
         .from("connections")
-        .select(
-          `
-          connected_user_id,
-          profiles!connections_connected_user_id_fkey (
-            id, full_name, title, department, location, avatar_url
-          )
-        `,
-        )
+        .select("connected_user_id")
         .eq("user_id", user.id)
         .eq("status", "accepted");
 
       if (error) {
         console.error("Connections fetch error:", error);
         toast.error("Failed to load connections");
-      } else {
-        const mapped = (data || [])
-          .filter((row) => row.profiles)
-          .map((row) => ({
-            id: row.profiles.id,
-            name: row.profiles.full_name || "Unknown User",
-            title: row.profiles.title || row.profiles.department || "Student",
-            college: row.profiles.department || "",
-            avatar: row.profiles.avatar_url || FALLBACK_AVATAR,
-            location: row.profiles.location || "",
-          }));
-        setConnections(mapped);
+        setLoading(false);
+        return;
       }
+
+      const ids = (connData || []).map(c => c.connected_user_id);
+      if (ids.length === 0) { setConnections([]); setLoading(false); return; }
+
+      // Step 2: fetch those profiles
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name, title, department, location, avatar_url")
+        .in("id", ids);
+
+      const mapped = (profilesData || []).map(p => ({
+        id: p.id,
+        name: p.full_name || "Unknown User",
+        title: p.title || p.department || "Student",
+        college: p.department || "",
+        avatar: p.avatar_url || FALLBACK_AVATAR,
+        location: p.location || ""
+      }));
+      setConnections(mapped);
       setLoading(false);
     };
     fetchConnections();

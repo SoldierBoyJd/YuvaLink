@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Search, MapPin, BookOpen, UserPlus, Check, MessageSquare, Loader } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -9,11 +10,18 @@ const FALLBACK_COVER = "https://images.unsplash.com/photo-1618005182384-a83a8bd5
 
 function Discover() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [peers, setPeers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
   const [selectedSkill, setSelectedSkill] = useState("All");
   const [connectingIds, setConnectingIds] = useState(new Set());
+
+  // Sync URL param into search box when navigated from global search
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) setSearchQuery(q);
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchPeers = async () => {
@@ -61,7 +69,7 @@ function Discover() {
       setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connected: false } : p));
       toast.success(`Removed connection with ${peerName}`);
     } else {
-      // Send connection request (insert both sides as accepted for simplicity)
+      // Send connection request
       const { error } = await supabase.from("connections").upsert([
         { user_id: user.id, connected_user_id: peerId, status: "accepted" },
         { user_id: peerId, connected_user_id: user.id, status: "accepted" }
@@ -70,6 +78,15 @@ function Discover() {
       else {
         setPeers(prev => prev.map(p => p.id === peerId ? { ...p, connected: true } : p));
         toast.success(`Connected with ${peerName}!`);
+
+        // Notify the other user
+        const senderName = (await supabase.from("profiles").select("full_name").eq("id", user.id).single()).data?.full_name || "Someone";
+        await supabase.from("notifications").insert({
+          user_id: peerId,
+          actor_id: user.id,
+          type: "connection",
+          message: `${senderName} connected with you on YuvaLink!`,
+        });
       }
     }
     setConnectingIds(prev => { const s = new Set(prev); s.delete(peerId); return s; });
@@ -78,14 +95,21 @@ function Discover() {
   const handleSendDM = (name) => toast.success(`Chat with ${name} coming soon!`);
 
   const filteredPeers = peers.filter(peer => {
-    const name = peer.full_name || "";
-    const title = peer.title || peer.department || "";
-    const college = peer.department || "";
-    const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          college.toLowerCase().includes(searchQuery.toLowerCase());
-    const peerSkills = peer.skills || [];
-    const matchesSkill = selectedSkill === "All" || peerSkills.includes(selectedSkill);
+    const name = (peer.full_name || "").toLowerCase();
+    const title = (peer.title || peer.department || "").toLowerCase();
+    const college = (peer.department || "").toLowerCase();
+    const q = searchQuery.toLowerCase();
+    const peerSkills = (peer.skills || []).map(s => s.toLowerCase());
+
+    const matchesSearch = !q ||
+      name.includes(q) ||
+      title.includes(q) ||
+      college.includes(q) ||
+      peerSkills.some(s => s.includes(q)); // also match against skills
+
+    const matchesSkill = selectedSkill === "All" ||
+      peerSkills.includes(selectedSkill.toLowerCase());
+
     return matchesSearch && matchesSkill;
   });
 
