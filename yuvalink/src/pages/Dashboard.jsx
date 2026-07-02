@@ -41,7 +41,6 @@ function Dashboard() {
   const fileInputRef = useRef(null);
 
   // ── Fetch feed ──────────────────────────────────────────────────────────────
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   const fetchPosts = useCallback(async () => {
     setFeedLoading(true);
     const { data, error } = await supabase
@@ -55,27 +54,46 @@ function Dashboard() {
 
     if (error) { console.error("Failed to load feed:", error); setFeedLoading(false); return; }
 
-    let likedSet = new Set();
-    if (user) {
-      const { data: likesData } = await supabase
-        .from("post_likes").select("post_id").eq("user_id", user.id);
-      if (likesData) likesData.forEach(l => likedSet.add(l.post_id));
-    }
+    // Fetch real like counts + current user's liked posts in parallel
+    const postIds = (data || []).map(p => p.id);
+    const [likesCountResult, userLikesResult] = await Promise.all([
+      postIds.length > 0
+        ? supabase.from("post_likes").select("post_id").in("post_id", postIds)
+        : { data: [] },
+      user && postIds.length > 0
+        ? supabase.from("post_likes").select("post_id").in("post_id", postIds).eq("user_id", user.id)
+        : { data: [] },
+    ]);
+
+    // Build real count map
+    const countMap = {};
+    (likesCountResult.data || []).forEach(l => {
+      countMap[l.post_id] = (countMap[l.post_id] || 0) + 1;
+    });
+
+    const likedSet = new Set((userLikesResult.data || []).map(l => l.post_id));
 
     setPosts((data || []).map(p => ({
       ...p,
       liked: likedSet.has(p.id),
+      likes_count: countMap[p.id] ?? 0,  // real count from post_likes, never stale
       author: {
         name:   p.profiles?.full_name  || "Unknown",
         title:  p.profiles?.title      || p.profiles?.department || "Student",
         avatar: p.profiles?.avatar_url || FALLBACK_AVATAR,
       },
     })));
-    setFeedLoading(false);
+    setFeedLoading(false); 
+     
   }, [user]);
 
   useEffect(() => {
-    fetchPosts();
+    let cancelled = false;
+    const load = async () => {
+      if (!cancelled) await fetchPosts();
+    };
+    load();
+    return () => { cancelled = true; };
   }, [fetchPosts]);
 
   // ── Realtime: new posts appear instantly ─────────────────────────────────────
@@ -103,6 +121,43 @@ function Dashboard() {
               }
             }, ...prev]);
           }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user]);
+
+  // ── Realtime: like counts update live from other users ───────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("realtime:post_likes")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "post_likes" },
+        async (payload) => {
+          const postId = payload.new.post_id;
+          const { count } = await supabase
+            .from("post_likes")
+            .select("post_id", { count: "exact", head: true })
+            .eq("post_id", postId);
+          setPosts(prev => prev.map(p =>
+            p.id === postId
+              ? { ...p, likes_count: count ?? p.likes_count, liked: p.liked || payload.new.user_id === user.id }
+              : p
+          ));
+        }
+      )
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "post_likes" },
+        async (payload) => {
+          const postId = payload.old.post_id;
+          const { count } = await supabase
+            .from("post_likes")
+            .select("post_id", { count: "exact", head: true })
+            .eq("post_id", postId);
+          setPosts(prev => prev.map(p =>
+            p.id === postId
+              ? { ...p, likes_count: count ?? Math.max(0, p.likes_count - 1), liked: p.liked && payload.old.user_id !== user.id }
+              : p
+          ));
         }
       )
       .subscribe();
@@ -181,21 +236,35 @@ function Dashboard() {
     const post = posts.find(p => p.id === postId);
     if (!post) return;
 
-    // Optimistic update
+    // Optimistic toggle immediately
+    const wasLiked = post.liked;
     setPosts(prev => prev.map(p =>
       p.id === postId
-        ? { ...p, liked: !p.liked, likes_count: p.liked ? p.likes_count - 1 : p.likes_count + 1 }
+        ? { ...p, liked: !wasLiked, likes_count: Math.max(0, wasLiked ? p.likes_count - 1 : p.likes_count + 1) }
         : p
     ));
 
-    if (post.liked) {
-      await supabase.from("post_likes").delete()
-        .eq("post_id", postId).eq("user_id", user.id);
-      await supabase.from("posts").update({ likes_count: post.likes_count - 1 }).eq("id", postId);
-    } else {
-      await supabase.from("post_likes").insert({ post_id: postId, user_id: user.id });
-      await supabase.from("posts").update({ likes_count: post.likes_count + 1 }).eq("id", postId);
+    // Atomic toggle via DB function — returns the real count
+    const { data: realCount, error } = await supabase.rpc("toggle_like", {
+      p_post_id: postId,
+      p_user_id: user.id,
+    });
+
+    if (error) {
+      // Revert optimistic update on error
+      console.error("Like error:", error);
+      setPosts(prev => prev.map(p =>
+        p.id === postId ? { ...p, liked: wasLiked, likes_count: post.likes_count } : p
+      ));
+      return;
     }
+
+    // Sync with the real count from DB (never negative)
+    setPosts(prev => prev.map(p =>
+      p.id === postId
+        ? { ...p, liked: !wasLiked, likes_count: Math.max(0, realCount ?? p.likes_count) }
+        : p
+    ));
   };
 
   // ── Delete own post ──────────────────────────────────────────────────────────
