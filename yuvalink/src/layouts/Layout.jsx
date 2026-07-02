@@ -12,11 +12,13 @@ import {
   TrendingUp,
   Sparkles,
   ChevronRight,
-  UserPlus
+  UserPlus,
+  MessageSquare
 } from "lucide-react";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
 import { useNotifications } from "../hooks/useNotifications";
+import { useUnreadMessages } from "../hooks/useUnreadMessages";
 import NotificationPanel from "../components/NotificationPanel";
 import GlobalSearch from "../components/GlobalSearch";
 import toast from "react-hot-toast";
@@ -37,6 +39,7 @@ function Layout({ children }) {
   const theme = "dark";
   const { profile } = useAuth();
   const { notifications, loading: notifsLoading, unreadCount, markAllRead, markOneRead } = useNotifications();
+  const unreadMessages = useUnreadMessages();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [connectedIds, setConnectedIds] = useState([]);
@@ -306,6 +309,17 @@ function Layout({ children }) {
               </Link>
             </li>
             <li>
+              <Link to="/chat" className={`sidebar-link ${location.pathname === "/chat" ? "active" : ""}`} style={{ position: "relative" }}>
+                <MessageSquare size={20} />
+                <span>Messages</span>
+                {unreadMessages > 0 && (
+                  <span style={{ marginLeft: "auto", background: "var(--danger)", color: "#fff", borderRadius: "999px", padding: "1px 7px", fontSize: "11px", fontWeight: "700" }}>
+                    {unreadMessages > 9 ? "9+" : unreadMessages}
+                  </span>
+                )}
+              </Link>
+            </li>
+            <li>
               <Link to="/profile" className={`sidebar-link ${location.pathname === "/profile" ? "active" : ""}`}>
                 <User size={20} />
                 <span>Profile</span>
@@ -399,6 +413,10 @@ function Layout({ children }) {
         <Link to="/connections" className={`mobile-nav-item ${location.pathname === "/connections" ? "active" : ""}`}>
           <Users size={20} />
           <span>Peers</span>
+        </Link>
+        <Link to="/chat" className={`mobile-nav-item ${location.pathname === "/chat" ? "active" : ""}`}>
+          <MessageSquare size={20} />
+          <span>Chat</span>
         </Link>
         <Link to="/profile" className={`mobile-nav-item ${location.pathname === "/profile" ? "active" : ""}`}>
           <User size={20} />

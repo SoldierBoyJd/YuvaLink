@@ -5,11 +5,13 @@ import {
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
 
 function Connections() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [connections, setConnections] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,7 @@ function Connections() {
     toast.success(`Declined request from ${inviter.name}`);
   };
 
-  const handleMessage = (name) => toast.success(`Chat with ${name} coming soon!`);
+  const handleMessage = (connId) => navigate(`/chat?with=${connId}`);
 
   const filteredConnections = connections.filter(conn =>
     conn.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -178,7 +180,7 @@ function Connections() {
                   <p style={{ fontSize: "13px", color: "var(--primary)", fontWeight: "600", marginTop: "2px" }}>{conn.title}</p>
                   <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>{conn.college}</p>
                   <div style={{ display: "flex", width: "100%", gap: "10px", marginTop: "20px" }}>
-                    <button onClick={() => handleMessage(conn.name)} className="btn btn-primary" style={{ flex: 1, fontSize: "13px", padding: "8px 12px", gap: "6px" }}>
+                    <button onClick={() => handleMessage(conn.id)} className="btn btn-primary" style={{ flex: 1, fontSize: "13px", padding: "8px 12px", gap: "6px" }}>
                       <MessageSquare size={14} /><span>Message</span>
                     </button>
                   </div>

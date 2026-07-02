@@ -10,6 +10,8 @@ import Discover from "../pages/Discover";
 import Opportunities from "../pages/Opportunities";
 import Connections from "../pages/Connections";
 
+import Chat from "../pages/Chat";
+
 // Route guard component defined inline
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -47,6 +49,7 @@ function AppRoutes() {
         <Route path="/discover" element={<Discover />} />
         <Route path="/opportunities" element={<Opportunities />} />
         <Route path="/connections" element={<Connections />} />
+        <Route path="/chat" element={<Chat />} />
       </Route>
     </Routes>
   );

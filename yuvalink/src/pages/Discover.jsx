@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Search, MapPin, BookOpen, UserPlus, Check, MessageSquare, Loader } from "lucide-react";
-import { useSearchParams, useLocation } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -11,6 +11,7 @@ const FALLBACK_COVER = "https://images.unsplash.com/photo-1618005182384-a83a8bd5
 function Discover() {
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [peers, setPeers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +98,7 @@ function Discover() {
     setConnectingIds(prev => { const s = new Set(prev); s.delete(peerId); return s; });
   };
 
-  const handleSendDM = (name) => toast.success(`Chat with ${name} coming soon!`);
+  const handleSendDM = (peerId) => navigate(`/chat?with=${peerId}`);
 
   const filteredPeers = peers.filter(peer => {
     const name = (peer.full_name || "").toLowerCase();
@@ -195,7 +196,14 @@ function Discover() {
                       : <span style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}><UserPlus size={14} /> Connect</span>
                     }
                   </button>
-                  <button onClick={() => handleSendDM(peer.full_name)} className="btn btn-secondary" style={{ padding: "8px 12px" }} aria-label="Message"><MessageSquare size={14} /></button>
+                  <button
+                    onClick={() => peer.connectionStatus === "accepted" ? handleSendDM(peer.id) : null}
+                    disabled={peer.connectionStatus !== "accepted"}
+                    className="btn btn-secondary"
+                    style={{ padding: "8px 12px", opacity: peer.connectionStatus === "accepted" ? 1 : 0.35, cursor: peer.connectionStatus === "accepted" ? "pointer" : "not-allowed" }}
+                    title={peer.connectionStatus === "accepted" ? "Send message" : "Connect first to message"}
+                    aria-label="Message"
+                  ><MessageSquare size={14} /></button>
                 </div>
               </div>
             </div>

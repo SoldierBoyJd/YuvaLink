@@ -15,8 +15,8 @@ const parseJsonField = (value) => {
 function computeCompletion(data) {
   const fields = [
     data.full_name, data.department, data.bio, data.avatar_url,
-    data.location, data.title, data.github || data.github_url,
-    data.linkedin || data.linkedin_url,
+    data.location, data.title, data.github,
+    data.linkedin,
   ];
   const arrayFields = [
     parseJsonField(data.skills).length > 0,
@@ -54,8 +54,8 @@ export function AuthProvider({ children }) {
       const completion = computeCompletion(data);
       setProfile({
         ...data,
-        github: data.github || data.github_url || "",
-        linkedin: data.linkedin || data.linkedin_url || "",
+        github: data.github || "",
+        linkedin: data.linkedin || "",
         skills: parseJsonField(data.skills),
         projects: parseJsonField(data.projects),
         experience: parseJsonField(data.experience),

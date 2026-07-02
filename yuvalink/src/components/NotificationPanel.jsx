@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bell, UserPlus, Check, X, Loader } from "lucide-react";
+import { Bell, UserPlus, Check, X, Loader, MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const FALLBACK_AVATAR = "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&crop=face";
@@ -8,6 +8,7 @@ const TYPE_ICON = {
   connection_request:  <UserPlus size={14} style={{ color: "var(--primary)" }} />,
   connection_accepted: <Check size={14} style={{ color: "#10b981" }} />,
   connection:          <UserPlus size={14} style={{ color: "var(--primary)" }} />,
+  message:             <MessageSquare size={14} style={{ color: "var(--secondary)" }} />,
   default:             <Bell size={14} style={{ color: "var(--text-muted)" }} />,
 };
 
@@ -35,6 +36,7 @@ export default function NotificationPanel({ notifications, loading, unreadCount,
   const handleNotifClick = (notif) => {
     onMarkOneRead(notif.id);
     if (notif.type === "connection" || notif.type === "connection_request" || notif.type === "connection_accepted") navigate("/connections");
+    else if (notif.type === "message") navigate(`/chat?with=${notif.actor?.id || ""}`);
     onClose();
   };
 

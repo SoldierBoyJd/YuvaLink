@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
-  User, MapPin, BookOpen, Plus, X, Edit3, Check, Globe, Briefcase, Code, Sparkles, Camera, Loader
+  User, MapPin, BookOpen, Plus, X, Edit3, Check, Globe, Briefcase, Code, Sparkles, Camera, Loader, Upload
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../config/supabase";
@@ -16,6 +16,14 @@ const AVATAR_OPTIONS = [
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&crop=face",
   "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face"
 ];
+
+// Normalize a social URL — accepts full URL or just username/path, returns full https URL
+const normalizeUrl = (value, baseUrl) => {
+  if (!value) return "";
+  const v = value.trim();
+  if (v.startsWith("http://") || v.startsWith("https://")) return v;
+  return `${baseUrl}/${v.replace(/^\/+/, "")}`;
+};
 
 const Github = ({ size = 20, ...props }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
@@ -37,6 +45,8 @@ const Linkedin = ({ size = 20, ...props }) => (
 function Profile() {
   const { user, profile: authProfile, refreshProfile } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarFileInputRef = useRef(null);
 
   // Local editable state — initialised from authProfile once loaded
   const [profileData, setProfileData] = useState(null);
@@ -85,8 +95,8 @@ function Profile() {
         bio: authProfile.bio || "",
         avatar: authProfile.avatar_url || FALLBACK_AVATAR,
         cover: authProfile.cover_url || FALLBACK_COVER,
-        github: authProfile.github || authProfile.github_url || "",
-        linkedin: authProfile.linkedin || authProfile.linkedin_url || "",
+        github: authProfile.github || "",
+        linkedin: authProfile.linkedin || "",
         website: authProfile.website || "",
         skills: Array.isArray(authProfile.skills) ? authProfile.skills : [],
         projects: Array.isArray(authProfile.projects) ? authProfile.projects : [],
@@ -137,9 +147,7 @@ function Profile() {
       department: editCollege,
       location: editLocation,
       github: editGithub,
-      github_url: editGithub,
       linkedin: editLinkedin,
-      linkedin_url: editLinkedin,
       website: editWebsite,
     }, true); // refresh context so sidebar name/avatar updates
     if (ok) {
@@ -164,6 +172,41 @@ function Profile() {
       setProfileData(prev => ({ ...prev, avatar: url }));
       setShowAvatarModal(false);
       toast.success("Avatar updated!");
+    }
+  };
+
+  const handleAvatarFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (file.size > 3 * 1024 * 1024) { toast.error("Photo must be under 3 MB"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
+
+    setUploadingAvatar(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${user.id}/avatar.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, { upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      // Bust cache by appending timestamp
+      const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+      const ok = await persistUpdate({ avatar_url: publicUrl });
+      if (ok) {
+        setProfileData(prev => ({ ...prev, avatar: publicUrl }));
+        setShowAvatarModal(false);
+        toast.success("Profile photo updated!");
+      }
+    } catch (err) {
+      toast.error("Upload failed: " + err.message);
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarFileInputRef.current) avatarFileInputRef.current.value = "";
     }
   };
 
@@ -249,9 +292,18 @@ function Profile() {
               </button>
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
-              <a href={profileData.github ? `https://github.com/${profileData.github}` : "#"} target={profileData.github ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.github ? 1 : 0.4 }} title={profileData.github ? `github.com/${profileData.github}` : "Add GitHub in Edit Profile"}><Github size={15} /></a>
-              <a href={profileData.linkedin ? `https://linkedin.com/in/${profileData.linkedin}` : "#"} target={profileData.linkedin ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.linkedin ? 1 : 0.4 }} title={profileData.linkedin ? `linkedin.com/in/${profileData.linkedin}` : "Add LinkedIn in Edit Profile"}><Linkedin size={15} /></a>
-              <a href={profileData.website ? `https://${profileData.website}` : "#"} target={profileData.website ? "_blank" : undefined} rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.website ? 1 : 0.4 }} title={profileData.website || "Add website in Edit Profile"}><Globe size={15} /></a>
+              <a href={profileData.github ? normalizeUrl(profileData.github, "https://github.com") : "#"}
+                target={profileData.github ? "_blank" : undefined} rel="noopener noreferrer"
+                className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.github ? 1 : 0.4 }}
+                title={profileData.github || "Add GitHub in Edit Profile"}><Github size={15} /></a>
+              <a href={profileData.linkedin ? normalizeUrl(profileData.linkedin, "https://linkedin.com/in") : "#"}
+                target={profileData.linkedin ? "_blank" : undefined} rel="noopener noreferrer"
+                className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.linkedin ? 1 : 0.4 }}
+                title={profileData.linkedin || "Add LinkedIn in Edit Profile"}><Linkedin size={15} /></a>
+              <a href={profileData.website ? normalizeUrl(profileData.website, "https://") : "#"}
+                target={profileData.website ? "_blank" : undefined} rel="noopener noreferrer"
+                className="btn btn-secondary" style={{ padding: "8px 12px", fontSize: "13px", opacity: profileData.website ? 1 : 0.4 }}
+                title={profileData.website || "Add website in Edit Profile"}><Globe size={15} /></a>
               <button onClick={() => setIsEditingInfo(true)} className="btn btn-primary" style={{ padding: "8px 16px", fontSize: "13px", gap: "6px" }}>
                 <Edit3 size={14} /><span>Edit Profile</span>
               </button>
@@ -392,9 +444,9 @@ function Profile() {
               <div className="input-group"><label className="input-label">Headline / Major</label><input type="text" className="glass-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required /></div>
               <div className="input-group"><label className="input-label">College / Institution</label><input type="text" className="glass-input" value={editCollege} onChange={(e) => setEditCollege(e.target.value)} /></div>
               <div className="input-group"><label className="input-label">Location</label><input type="text" className="glass-input" value={editLocation} onChange={(e) => setEditLocation(e.target.value)} /></div>
-              <div className="input-group"><label className="input-label">GitHub Username</label><input type="text" className="glass-input" placeholder="your-username" value={editGithub} onChange={(e) => setEditGithub(e.target.value)} /></div>
-              <div className="input-group"><label className="input-label">LinkedIn Username</label><input type="text" className="glass-input" placeholder="your-username" value={editLinkedin} onChange={(e) => setEditLinkedin(e.target.value)} /></div>
-              <div className="input-group"><label className="input-label">Website</label><input type="text" className="glass-input" placeholder="yoursite.dev" value={editWebsite} onChange={(e) => setEditWebsite(e.target.value)} /></div>
+              <div className="input-group"><label className="input-label">GitHub URL or Username</label><input type="text" className="glass-input" placeholder="https://github.com/username or just username" value={editGithub} onChange={(e) => setEditGithub(e.target.value)} /></div>
+              <div className="input-group"><label className="input-label">LinkedIn URL or Username</label><input type="text" className="glass-input" placeholder="https://linkedin.com/in/username or just username" value={editLinkedin} onChange={(e) => setEditLinkedin(e.target.value)} /></div>
+              <div className="input-group"><label className="input-label">Website URL</label><input type="text" className="glass-input" placeholder="https://yoursite.dev" value={editWebsite} onChange={(e) => setEditWebsite(e.target.value)} /></div>
               <div style={{ display: "flex", gap: "12px", marginTop: "10px" }}>
                 <button type="button" onClick={() => setIsEditingInfo(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Details</button>
@@ -409,14 +461,39 @@ function Profile() {
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: "16px" }} className="animate-fade-in">
           <div className="glass-card" style={{ width: "100%", maxWidth: "420px", padding: "32px", position: "relative", textAlign: "center" }}>
             <button onClick={() => setShowAvatarModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }} aria-label="Close"><X size={20} /></button>
-            <h3 style={{ fontSize: "20px", fontWeight: "800", marginBottom: "20px" }}>Choose Avatar</h3>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "14px" }}>
-              {AVATAR_OPTIONS.map((url, i) => (
-                <img key={i} src={url} alt={`Avatar option ${i + 1}`} onClick={() => selectAvatar(url)}
-                  className="avatar"
-                  style={{ width: "72px", height: "72px", cursor: "pointer", border: profileData.avatar === url ? "3px solid var(--primary)" : "3px solid transparent", transition: "border-color 0.2s", borderRadius: "50%" }}
-                />
-              ))}
+            <h3 style={{ fontSize: "20px", fontWeight: "800", marginBottom: "8px" }}>Choose Avatar</h3>
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "20px" }}>Upload your own photo or pick one below</p>
+
+            {/* Upload custom photo */}
+            <input
+              ref={avatarFileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleAvatarFileUpload}
+            />
+            <button
+              onClick={() => avatarFileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="btn btn-primary"
+              style={{ width: "100%", padding: "10px", marginBottom: "20px", gap: "8px", justifyContent: "center" }}
+            >
+              {uploadingAvatar
+                ? <><Loader size={15} className="animate-spin" /><span>Uploading...</span></>
+                : <><Upload size={15} /><span>Upload Your Photo</span></>
+              }
+            </button>
+
+            <div style={{ borderTop: "1px solid var(--card-border)", paddingTop: "16px", marginBottom: "12px" }}>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "14px" }}>Or choose a preset avatar</p>
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "14px" }}>
+                {AVATAR_OPTIONS.map((url, i) => (
+                  <img key={i} src={url} alt={`Avatar option ${i + 1}`} onClick={() => selectAvatar(url)}
+                    className="avatar"
+                    style={{ width: "72px", height: "72px", cursor: "pointer", border: profileData.avatar === url ? "3px solid var(--primary)" : "3px solid transparent", transition: "border-color 0.2s", borderRadius: "50%" }}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>

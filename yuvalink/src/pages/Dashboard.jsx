@@ -41,6 +41,7 @@ function Dashboard() {
   const fileInputRef = useRef(null);
 
   // ── Fetch feed ──────────────────────────────────────────────────────────────
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   const fetchPosts = useCallback(async () => {
     setFeedLoading(true);
     const { data, error } = await supabase
@@ -73,7 +74,9 @@ function Dashboard() {
     setFeedLoading(false);
   }, [user]);
 
-  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   // ── Realtime: new posts appear instantly ─────────────────────────────────────
   useEffect(() => {
